@@ -9,6 +9,8 @@
 #include "vla.hh"
 #include "build-info.hh"
 #include <cstdint>
+#include <cstdlib>
+#include <cstring>
 #include <memory>
 
 namespace openmsx {
@@ -33,7 +35,9 @@ SDLVisibleSurface::SDLVisibleSurface(
 		throw InitException("Could not create renderer: ", err);
 	}
 	SDL_RenderSetLogicalSize(renderer.get(), width, height);
+#if !OPENMSX_KORIKI
 	setSDLRenderer(renderer.get());
+#endif
 
 	surface.reset(SDL_CreateRGBSurface(
 		0, width, height, 32,
@@ -44,6 +48,27 @@ SDLVisibleSurface::SDLVisibleSurface(
 	}
 	setSDLSurface(surface.get());
 
+#if OPENMSX_KORIKI
+	// Koriki (Miyoo Mini): el renderer "Miyoo Mini" de SDL2 no copia los
+	// pixeles de las texturas (guarda el puntero), no mezcla alfa y coloca mal
+	// las texturas parciales. Asi que el OSD se compone por software sobre
+	// 'surface' y al renderer de la Miyoo solo se le sube un frame completo.
+	swRenderer.reset(SDL_CreateSoftwareRenderer(surface.get()));
+	if (!swRenderer) {
+		std::string_view err = SDL_GetError();
+		throw InitException("Could not create software renderer: ", err);
+	}
+	setSDLRenderer(swRenderer.get());
+
+	// Buffers del volcado (formato y pitch de 'surface')
+	size_t words = size_t(surface->pitch / 4) * surface->h;
+	for (auto& b : bufs) b.assign(words, 0);
+	// Diagnostico: OPENMSX_NO_PRESENT_THREAD=1 vuelca sin hilo aparte
+	if (!getenv("OPENMSX_NO_PRESENT_THREAD")) {
+		presentThread = std::thread([this] { presentLoop(); });
+	}
+#endif
+
 	texture.reset(SDL_CreateTexture(
 		renderer.get(), SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING,
 		width, height));
@@ -52,6 +77,7 @@ SDLVisibleSurface::SDLVisibleSurface(
 		throw InitException("Could not create texture: ", err);
 	}
 
+
 	setSDLPixelFormat(*surface->format);
 
 	// In the SDL renderer logical size is the same as physical size.
@@ -59,6 +85,62 @@ SDLVisibleSurface::SDLVisibleSurface(
 	calculateViewPort(size, size);
 }
 
+#if OPENMSX_KORIKI
+SDLVisibleSurface::~SDLVisibleSurface()
+{
+	{
+		std::lock_guard<std::mutex> lock(presentMutex);
+		quitPresent = true;
+	}
+	presentCond.notify_one();
+	if (presentThread.joinable()) presentThread.join();
+}
+
+void SDLVisibleSurface::presentLoop()
+{
+	while (true) {
+		{
+			std::unique_lock<std::mutex> lock(presentMutex);
+			presentCond.wait(lock, [this] { return frameReady || quitPresent; });
+			if (quitPresent) return;
+			std::swap(readyBuf, frontBuf); // coge el ultimo frame publicado
+			frameReady = false;
+		}
+		// Solo este hilo usa 'renderer' y 'texture'. El renderer de la Miyoo
+		// guarda el puntero de UpdateTexture: 'frontBuf' no cambia hasta la
+		// siguiente vuelta.
+		SDL_UpdateTexture(texture.get(), nullptr, frontBuf->data(), surface->pitch);
+		SDL_RenderCopy(renderer.get(), texture.get(), nullptr, nullptr);
+		SDL_RenderPresent(renderer.get());
+	}
+}
+
+void SDLVisibleSurface::flushFrameBuffer()
+{
+	// Nada: el frame del MSX ya esta en 'surface' y el OSD se dibuja encima.
+	// Se sube todo junto en finish().
+}
+
+void SDLVisibleSurface::finish()
+{
+	SDL_RenderFlush(swRenderer.get()); // termina de dibujar el OSD en 'surface'
+	if (!presentThread.joinable()) {
+		// Sin hilo (diagnostico): volcado directo
+		SDL_UpdateTexture(texture.get(), nullptr, surface->pixels, surface->pitch);
+		SDL_RenderCopy(renderer.get(), texture.get(), nullptr, nullptr);
+		SDL_RenderPresent(renderer.get());
+		return;
+	}
+	// Copia el frame terminado y lo publica; el hilo de volcado lo muestra.
+	memcpy(backBuf->data(), surface->pixels, backBuf->size() * sizeof(uint32_t));
+	{
+		std::lock_guard<std::mutex> lock(presentMutex);
+		std::swap(backBuf, readyBuf); // si el anterior no se mostro, se sustituye
+		frameReady = true;
+	}
+	presentCond.notify_one();
+}
+#else
 void SDLVisibleSurface::flushFrameBuffer()
 {
 	SDL_Renderer* render = getSDLRenderer();
@@ -71,6 +153,7 @@ void SDLVisibleSurface::finish()
 {
 	SDL_RenderPresent(getSDLRenderer());
 }
+#endif
 
 std::unique_ptr<Layer> SDLVisibleSurface::createSnowLayer()
 {

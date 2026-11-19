@@ -2,6 +2,7 @@
 #include "MSXMixer.hh"
 #include "NullSoundDriver.hh"
 #include "SDLSoundDriver.hh"
+#include "MiaoSoundDriver.hh"
 #include "CommandController.hh"
 #include "CliComm.hh"
 #include "MSXException.hh"
@@ -10,6 +11,8 @@
 #include "unreachable.hh"
 #include "build-info.hh"
 #include <cassert>
+#include <cstdlib>
+#include <cstring>
 #include <memory>
 
 namespace openmsx {
@@ -25,6 +28,10 @@ static EnumSetting<Mixer::SoundDriverType>::Map getSoundDriverMap()
 	EnumSetting<Mixer::SoundDriverType>::Map soundDriverMap = {
 		{ "null", Mixer::SND_NULL },
 		{ "sdl",  Mixer::SND_SDL } };
+#if OPENMSX_KORIKI
+	// Koriki: salida directa por mi_ao, como el driver MIAO de RetroArch
+	soundDriverMap.emplace_back("miao", Mixer::SND_MIAO);
+#endif
 	return soundDriverMap;
 }
 
@@ -34,7 +41,12 @@ Mixer::Mixer(Reactor& reactor_, CommandController& commandController_)
 	, soundDriverSetting(
 		commandController, "sound_driver",
 		"select the sound output driver",
-		Mixer::SND_SDL, getSoundDriverMap())
+#if OPENMSX_KORIKI
+		Mixer::SND_MIAO,
+#else
+		Mixer::SND_SDL,
+#endif
+		getSoundDriverMap())
 	, muteSetting(
 		commandController, "mute",
 		"(un)mute the emulation sound", false, Setting::DONT_SAVE)
@@ -79,8 +91,17 @@ void Mixer::reloadDriver()
 
 	driver = std::make_unique<NullSoundDriver>();
 
+	auto type = soundDriverSetting.getEnum();
+#if OPENMSX_KORIKI
+	// Diagnostico: OPENMSX_SOUND_DRIVER=sdl|null elige el driver desde el
+	// arranque (antes de abrir mi_ao), sin cambiar el ajuste guardado.
+	if (const char* env = getenv("OPENMSX_SOUND_DRIVER")) {
+		if (strcmp(env, "sdl") == 0)  type = SND_SDL;
+		if (strcmp(env, "null") == 0) type = SND_NULL;
+	}
+#endif
 	try {
-		switch (soundDriverSetting.getEnum()) {
+		switch (type) {
 		case SND_NULL:
 			driver = std::make_unique<NullSoundDriver>();
 			break;
@@ -90,6 +111,14 @@ void Mixer::reloadDriver()
 				frequencySetting.getInt(),
 				samplesSetting.getInt());
 			break;
+#if OPENMSX_KORIKI
+		case SND_MIAO:
+			driver = std::make_unique<MiaoSoundDriver>(
+				reactor,
+				frequencySetting.getInt(),
+				samplesSetting.getInt());
+			break;
+#endif
 		default:
 			UNREACHABLE;
 		}

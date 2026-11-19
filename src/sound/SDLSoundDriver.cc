@@ -22,7 +22,13 @@ SDLSoundDriver::SDLSoundDriver(Reactor& reactor_,
 	desired.freq     = wantedFreq;
 	desired.samples  = Math::ceil2(wantedSamples);
 	desired.channels = 2; // stereo
+#if OPENMSX_AUDIO_S16
+	// Miyoo Mini (driver SDL2 "Miyoo Mini"): solo acepta 16 bits con signo
+	// y no informa del formato, asi que SDL no convertiria desde float.
+	desired.format   = AUDIO_S16SYS;
+#else
 	desired.format   = AUDIO_F32SYS;
+#endif
 	desired.callback = audioCallbackHelper; // must be a static method
 	desired.userdata = this;
 
@@ -36,7 +42,11 @@ SDLSoundDriver::SDLSoundDriver(Reactor& reactor_,
 	frequency = obtained.freq;
 	fragmentSize = obtained.samples;
 
+#if OPENMSX_AUDIO_S16
+	mixBufferSize = 3 * (obtained.size / sizeof(int16_t)) + 2;
+#else
 	mixBufferSize = 3 * (obtained.size / sizeof(float)) + 2;
+#endif
 	mixBuffer.resize(mixBufferSize);
 	reInit();
 }
@@ -81,12 +91,42 @@ unsigned SDLSoundDriver::getSamples() const
 	return fragmentSize;
 }
 
+#if OPENMSX_AUDIO_S16
+void SDLSoundDriver::audioCallbackHelper(void* userdata, uint8_t* strm, int len)
+{
+	assert((len & 3) == 0); // stereo, 16 bit
+	static_cast<SDLSoundDriver*>(userdata)->
+		audioCallbackS16(reinterpret_cast<int16_t*>(strm), len / sizeof(int16_t));
+}
+
+static inline int16_t floatToS16(float f)
+{
+	int v = int(f * 32768.0f);
+	return int16_t(std::clamp(v, -32768, 32767));
+}
+
+void SDLSoundDriver::audioCallbackS16(int16_t* stream, unsigned len)
+{
+	assert((len & 1) == 0); // stereo
+	unsigned available = getBufferFilled();
+	unsigned num = std::min(len, available);
+	for (unsigned i = 0; i < num; ++i) {
+		stream[i] = floatToS16(mixBuffer[readIdx]);
+		if (++readIdx == mixBufferSize) readIdx = 0;
+	}
+	if (num < len) {
+		// buffer underrun
+		memset(&stream[num], 0, (len - num) * sizeof(int16_t));
+	}
+}
+#else
 void SDLSoundDriver::audioCallbackHelper(void* userdata, uint8_t* strm, int len)
 {
 	assert((len & 7) == 0); // stereo, 32 bit float
 	static_cast<SDLSoundDriver*>(userdata)->
 		audioCallback(reinterpret_cast<float*>(strm), len / sizeof(float));
 }
+#endif
 
 unsigned SDLSoundDriver::getBufferFilled() const
 {

@@ -22939,5 +22939,13 @@ The softwaredb.xml file contains information about rom mapper types
 	<country>US</country>
 		<dump><original value="true">GoodCol</original><rom><type>page23</type><hash>9119f3a485eb4215e7d41c7cf0e412d903458647</hash></rom></dump>
 </software>
+<software>
+	<title>Pampas and Selene</title>
+	<system>MSX2</system>
+	<company>Fran Tellez De Meneses</company>
+	<year>2023</year>
+	<country>ES</country>
+		<dump><original value="true">Author</original><megarom><type>RBSC_Flash_KonamiSCC</type><hash>bc9cda8a3cfb011091e3a1da4f50b2e3aa2c8b6b</hash><remark>R-01, partida en la flash (Koriki)</remark></megarom></dump>
+</software>
 </softwaredb>
 <!-- Roms in this XML file:5934 - Created on Wed Dec 16 2020 - 13:24:26 AKST-->

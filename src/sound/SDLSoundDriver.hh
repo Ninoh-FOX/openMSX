@@ -33,6 +33,7 @@ private:
 	[[nodiscard]] unsigned getBufferFree() const;
 	static void audioCallbackHelper(void* userdata, uint8_t* strm, int len);
 	void audioCallback(float* stream, unsigned len);
+	void audioCallbackS16(int16_t* stream, unsigned len);
 
 private:
 	Reactor& reactor;

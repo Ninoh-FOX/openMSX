@@ -64,10 +64,11 @@ static constexpr auto config4 = [] {
 RomManbow2::RomManbow2(const DeviceConfig& config, Rom&& rom_,
                        RomType type)
 	: MSXRom(config, std::move(rom_))
-	, scc((type != ROM_RBSC_FLASH_KONAMI_SCC)
-		? std::make_unique<SCC>(
-			getName() + " SCC", config, getCurrentTime())
-		: nullptr)
+	// Koriki: RBSC tambien lleva SCC. Pampas & Selene (R-01) usa este
+	// cartucho y toca la musica con SCC; solo se activa si el juego escribe
+	// 0x3F en 0x9000, asi que no cambia nada para otras ROMs.
+	, scc(std::make_unique<SCC>(
+		getName() + " SCC", config, getCurrentTime()))
 	, psg((type == one_of(ROM_MANBOW2_2, ROM_HAMARAJANIGHT))
 		? std::make_unique<AY8910>(
 			getName() + " PSG", DummyAY8910Periphery::instance(),

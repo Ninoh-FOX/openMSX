@@ -16,6 +16,7 @@ int SDLVisibleSurfaceBase::windowPosY = SDL_WINDOWPOS_UNDEFINED;
 
 SDLVisibleSurfaceBase::~SDLVisibleSurfaceBase()
 {
+	if (!window) return;
 	// store last known position for when we recreate it
 	// the window gets recreated when changing renderers, for instance.
 	// Do not store if we're fullscreen, the location is the top-left
@@ -84,12 +85,18 @@ void SDLVisibleSurfaceBase::createSurface(int width, int height, unsigned flags)
 
 void SDLVisibleSurfaceBase::updateWindowTitle()
 {
+#if OPENMSX_KORIKI
+	if (!window) return; // Koriki: sin ventana
+#endif
 	assert(window);
 	SDL_SetWindowTitle(window.get(), getDisplay().getWindowTitle().c_str());
 }
 
 bool SDLVisibleSurfaceBase::setFullScreen(bool fullscreen)
 {
+#if OPENMSX_KORIKI
+	if (!window) return true; // Koriki: siempre pantalla completa, sin ventana
+#endif
 	auto flags = SDL_GetWindowFlags(window.get());
 	// Note: SDL_WINDOW_FULLSCREEN_DESKTOP also has the SDL_WINDOW_FULLSCREEN
 	//       bit set.

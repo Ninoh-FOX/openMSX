@@ -30,8 +30,9 @@ namespace openmsx {
 #if defined(_WIN32)
 	return "default";
 #else
+	// En la Mini v4 no hay entrada en /etc/passwd y getpwuid() devuelve NULL
 	struct passwd* pw = getpwuid(getuid());
-	return pw->pw_name ? pw->pw_name : string{};
+	return (pw && pw->pw_name) ? pw->pw_name : string{"default"};
 #endif
 }
 

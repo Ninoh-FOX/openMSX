@@ -1,5 +1,5 @@
 from components import (
-	EmulationCore, GLRenderer, Laserdisc, iterComponents
+	EmulationCore, GLRenderer, Laserdisc, ALSAMIDI, iterComponents
 	)
 
 class Configuration(object):
@@ -43,6 +43,12 @@ def getConfiguration(name):
 		optionalComponents = \
 			set(iterComponents()) - requiredComponents - set((GLRenderer, ))
 		linkStatic = True
+	elif name == 'SYS_DYN_KORIKI':
+		# Koriki (Miyoo Mini): sin MIDI por ALSA, la consola no lo tiene
+		requiredComponents = set((EmulationCore, ))
+		optionalComponents = \
+			set(iterComponents()) - requiredComponents - set((ALSAMIDI, ))
+		linkStatic = False
 	elif name == '3RD_STA_MIN':
 		requiredComponents = set((EmulationCore, ))
 		optionalComponents = set()
